@@ -1,0 +1,33 @@
+{
+  "name": "solana-execution-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Production-oriented Solana execution engine foundation (execution disabled)",
+  "license": "MIT",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm --filter @execution/contracts build && pnpm -r typecheck",
+    "lint": "pnpm --filter @execution/contracts build && eslint .",
+    "test": "pnpm -r test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:up": "docker compose up -d postgres redis",
+    "db:down": "docker compose down",
+    "compose:check": "docker compose config --quiet",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build && cargo fmt --all --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.6.6",
+    "eslint": "10.14.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vitest": "5.1.0"
+  }
+}

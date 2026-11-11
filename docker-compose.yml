@@ -1,0 +1,38 @@
+name: solana-execution-engine
+
+services:
+  postgres:
+    image: postgres:18.1-alpine
+    environment:
+      POSTGRES_DB: execution
+      POSTGRES_USER: execution
+      POSTGRES_PASSWORD: execution
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-55433}:5432'
+    volumes:
+      - execution-postgres:/var/lib/postgresql/data
+      - ./infra/postgres/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U execution -d execution']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.4.0-alpine
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    ports:
+      - '127.0.0.1:${REDIS_PORT:-56379}:6379'
+    volumes:
+      - execution-redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  execution-postgres:
+  execution-redis:

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+target/
+.env
+.env.*.local
+coverage/
+.idea/
+.vscode/
+*.log
+.DS_Store
+
