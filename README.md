@@ -73,3 +73,7 @@ docs/adr/                     architecture decisions
 ## Следующий безопасный шаг
 
 Stage 2 добавляет read-only RPC/Yellowstone ingestion, canonical slot ledger, RPC backfill и quote-only Jupiter v2 adapter. Даже на этом этапе signing и real-money execution остаются запрещены.
+
+## Проверка 11 ноября 2026
+
+Локально прошли `pnpm check`, Rust/TypeScript tests, сборка, lint, typecheck и format check. PostgreSQL и Redis достигли healthy, миграция создала пять таблиц, три health endpoint ответили `200`, а unsafe mode завершился с ошибкой. Первый GitHub Actions run был остановлен до запуска jobs из-за billing-блокировки аккаунта GitHub; это внешнее ограничение, не результат тестов.
