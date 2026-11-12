@@ -1,27 +1,33 @@
 # Solana Execution Engine
 
-Production-oriented основа для безопасного исполнения swap-намерений в Solana. Это второй самостоятельный продукт Portfolio Web3; репозиторий Solana Sentinel не изменён.
+Второй продукт Portfolio Web3: отдельная система для безопасного управления swap-намерениями и данными Solana. Проект хранится отдельно от Solana Sentinel; Sentinel не изменяется.
 
-> Текущий статус: **Stage 1 / Foundation**. Выполнение транзакций, подпись и broadcast намеренно отсутствуют. Единственный режим — `EXECUTION_MODE=disabled`; API принимает только simulation intents.
+Полная спецификация на русском языке находится в [`docs/SDD.ru.md`](docs/SDD.ru.md), решения по архитектуре — в [`docs/adr/`](docs/adr/).
 
-## Что уже создано
+## Текущее состояние
 
-- Rust workspace: доменная модель/policy, `execution-engine`, `market-data`;
-- TypeScript workspace: control API и общие Zod-контракты;
-- PostgreSQL 18 + Redis 8 через Docker Compose;
-- начальная SQL-схема для intents, quote snapshots, checkpoints, slot observations и outbox;
-- health/readiness endpoints и структурированные логи;
-- GitHub Actions для TypeScript, Rust и Docker Compose;
-- unit/API tests, форматирование, lint и строгий typecheck;
-- [полный production-grade SDD](docs/SDD.ru.md) и четыре ADR.
+Реализована основа и начат Stage 2 с read-only интеграциями:
 
-## Границы безопасности Foundation
+- Rust workspace с доменной моделью, fail-closed policy и сервисами `execution-engine` и `market-data`;
+- TypeScript API и общие Zod-контракты;
+- PostgreSQL 18 и Redis 8 в Docker Compose;
+- durable idempotency для intents, audit/outbox записи и SQL migrations;
+- Jupiter Swap API v2 quote-only через `/order`, с проверкой пары/суммы, SHA-256 исходного ответа и сохранением результата; провайдер сейчас ограничен `mainnet-beta`;
+- finalized RPC backfill с durable checkpoint и canonical slot facts; Yellowstone confirmed stream с replay включается переменной `YELLOWSTONE_ENDPOINT` на Linux;
+- RPC-backed read-only транзакционная симуляция с ограничением размера, таймаутом и ограниченным ответом; она всегда возвращает `executionAllowed: false`;
+- health, readiness, базовые metrics, структурные логи, GitHub Actions и тесты;
+- production SDD с угрозами, trade-offs, измеримыми критериями, этапами и рисками.
 
-- нет приватных ключей и переменной окружения для них;
-- нет signer adapter;
-- нет `sendTransaction`, Jupiter `/execute` или другого broadcast-кода;
-- Rust policy всегда возвращает запрет исполнения;
-- конфигурация с `EXECUTION_MODE`, отличным от `disabled`, не запускается.
+**Проект ещё не готов к production.** До RPC транзакция структурно разбирается version-aware parser'ом для legacy/v0/v1, и проверяются program ID и статические account references. Семантика DEX-инструкций и program allowlist ещё не реализованы; v0 с ALT отклоняется, пока lookup addresses не резолвятся. Симуляция не создаёт approval evidence. Не завершены полноценный policy rollout, signer, broadcaster, confirmer, production runbooks, SLO measurements и независимый security audit.
+
+## Защита активов
+
+- `EXECUTION_MODE` допускает только `disabled`;
+- в коде нет приватных ключей, signer adapter, Jupiter `/execute`, `sendTransaction` или другого broadcast пути;
+- quote endpoint только читает котировку и сохраняет её доказательство;
+- Rust endpoint `/v1/simulate` сейчас выполняет fail-closed policy check, но не заявляет об on-chain simulation;
+- Rust endpoint `/v1/simulate-transaction` сначала структурно разбирает legacy/v0/v1; malformed tx, unresolved ALT и v1 без обязательных resource limits отклоняются до RPC. Затем вызывается только `simulateTransaction` с `sigVerify=false` и `replaceRecentBlockhash=true`; ответ не разрешает исполнение;
+- Stage 4 devnet execution и Stage 5 mainnet canary не включены.
 
 ## Требования
 
@@ -30,50 +36,49 @@ Production-oriented основа для безопасного исполнен�
 - Rust 1.98.1
 - Docker с Compose
 
-По умолчанию инфраструктура использует host-порты `55433` (PostgreSQL) и `56379` (Redis), чтобы не конфликтовать с Sentinel и другими локальными проектами.
+PostgreSQL и Redis используют локальные порты `55433` и `56379`, чтобы не конфликтовать с Sentinel и другими сервисами.
 
-## Быстрый старт
+## Запуск локально
 
-```bash
-cp .env.example .env
+В PowerShell из корня репозитория:
+
+```powershell
+Copy-Item .env.example .env
 pnpm install
 pnpm db:up
+pnpm db:migrate
 pnpm check
+```
+
+Затем в отдельных окнах:
+
+```powershell
 pnpm --filter @execution/control-api dev
 ```
 
-Rust-сервисы запускаются отдельно:
-
-```bash
+```powershell
 cargo run -p execution-engine
+```
+
+```powershell
 cargo run -p market-data
 ```
 
-Проверка API:
+Сервис market-data использует RPC URL и кластер из `.env`. Yellowstone gRPC запускается внутри Linux окружения; локальный Windows запуск остаётся RPC-only.
 
-```bash
-curl http://127.0.0.1:3000/health
-curl http://127.0.0.1:3001/health
-curl http://127.0.0.1:3002/health
-```
+## API
 
-## Структура
+- `GET /health`, `GET /ready`
+- `POST /v1/intents` — принять durable idempotent intent; повтор того же ключа возвращает исходную запись, другое содержимое с тем же ключом даёт `409`;
+- `POST /v1/quotes` — запросить и сохранить Jupiter quote-only для `mainnet-beta`;
+- `GET /v1/quotes/{id}` — прочитать нормализованную котировку;
+- `POST /v1/simulate` в Rust-сервисе — fail-closed policy check без создания транзакции;
+- `POST /v1/simulate-transaction` в Rust-сервисе — version-aware структурная проверка и read-only RPC simulation для base64-транзакции (до 4 KiB); повреждённые транзакции и неразрешённые ALT отклоняются. Это наблюдение, не approval и не путь отправки.
 
-```text
-apps/control-api/             TypeScript control plane
-packages/contracts/           versioned wire contracts
-crates/engine-core/           Rust domain model and fail-closed policy
-services/execution-engine/    Rust simulation-only data plane
-services/market-data/         Rust ingestion process shell (disconnected)
-infra/postgres/migrations/    durable schema
-docs/SDD.ru.md                production design and roadmap
-docs/adr/                     architecture decisions
-```
+По умолчанию `JUPITER_API_KEY` пустой. Если Jupiter требует ключ для выбранного тарифа, укажите его в `.env`.
 
-## Следующий безопасный шаг
+## Проверки
 
-Stage 2 добавляет read-only RPC/Yellowstone ingestion, canonical slot ledger, RPC backfill и quote-only Jupiter v2 adapter. Даже на этом этапе signing и real-money execution остаются запрещены.
+`pnpm check` выполняет форматирование, ESLint, TypeScript typecheck/tests/build, Rust fmt/Clippy/tests и проверку Docker Compose.
 
-## Проверка 11 ноября 2026
-
-Локально прошли `pnpm check`, Rust/TypeScript tests, сборка, lint, typecheck и format check. PostgreSQL и Redis достигли healthy, миграция создала пять таблиц, три health endpoint ответили `200`, а unsafe mode завершился с ошибкой. Первый GitHub Actions run был остановлен до запуска jobs из-за billing-блокировки аккаунта GitHub; это внешнее ограничение, не результат тестов.
+Интеграционный запуск с реальными RPC/Yellowstone credentials, end-to-end tests, нагрузочные SLO проверки и security audit остаются отдельными production gates из SDD.

@@ -9,8 +9,8 @@
 
 ## Решение
 
-Единственное допустимое значение `EXECUTION_MODE` — `disabled`. В репозитории нет переменной для приватного ключа, signer adapter и вызова `sendTransaction`. Endpoint intent возвращает только `simulation_only`; Rust policy всегда запрещает исполнение. Любое другое значение режима останавливает процесс при старте.
+Единственное допустимое значение `EXECUTION_MODE` — `disabled`. В репозитории нет переменной для приватного ключа, signer adapter и вызова `sendTransaction`. Endpoint intent сохраняет намерение со статусом `received`; Rust endpoint `/v1/simulate` пока выполняет только fail-closed policy check и всегда возвращает `executable: false`. Любое другое значение режима останавливает процесс при старте.
 
 ## Последствия
 
-Случайная конфигурация не может включить торговлю. Для devnet paper execution потребуется новый ADR, threat-model review, отдельный signer interface и явное изменение схемы конфигурации.
+Случайная конфигурация не может включить торговлю. На текущей реализации также нет on-chain simulation, подписания или отправки транзакций. Даже для devnet execution потребуется новый ADR, threat-model review, отдельный signer interface и явное изменение схемы конфигурации.

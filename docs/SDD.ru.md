@@ -1,13 +1,22 @@
 # Solana Execution Engine — Software Design Document
 
-| Поле                | Значение                                                |
-| ------------------- | ------------------------------------------------------- |
-| Версия              | 1.0                                                     |
-| Дата                | 11 ноября 2026                                          |
-| Статус              | Approved for Stage 1 Foundation                         |
-| Владелец            | Portfolio Web3                                          |
-| Репозиторий         | `solana-execution-engine` (отдельно от Solana Sentinel) |
-| Денежное исполнение | Запрещено на Stage 1                                    |
+| Поле                | Значение                                                  |
+| ------------------- | --------------------------------------------------------- |
+| Версия              | 1.3                                                       |
+| Дата                | 12 ноября 2026                                            |
+| Статус              | Stage 1 implemented; Stage 2 in progress; Stage 3 started |
+| Владелец            | Portfolio Web3                                            |
+| Репозиторий         | `solana-execution-engine` (отдельно от Solana Sentinel)   |
+| Денежное исполнение | Запрещено в текущей реализации                            |
+
+### Статус реализации на 12 ноября 2026
+
+- **Stage 1 Foundation:** monorepo, контракты, fail-closed сервисы, PostgreSQL/Redis и migrations реализованы; миграция и durable idempotency проверены локально. GitHub Actions jobs пока не запускаются из-за billing lock аккаунта.
+- **Stage 2 Read-only:** quote-only интеграция Jupiter и finalized RPC ingestion с checkpoint реализованы; Yellowstone replay код проходит Linux workspace build/tests локально. Provider soak и 24-часовая проверка не завершены.
+- **Stage 3 Simulation:** добавлены version-aware structural decoding для legacy/v0/v1 и bounded read-only RPC simulation. Неизвестный/повреждённый формат, незарезолвленные ALT и v1 без resource limits fail-closed до RPC. Program-specific instruction decoding, ALT resolution, policy approval и детерминированный replay не реализованы; Stage 3 acceptance gates остаются открытыми.
+- **Real-money execution:** выключено и не начиналось. Нет ключей и пути подписи/отправки.
+
+Измеримые критерии ниже остаются gates для продвижения; они не считаются выполненными по факту наличия кода.
 
 ## 1. Резюме решения
 
@@ -348,9 +357,13 @@ Policy evaluation детерминирована и не делает сетев
 
 Возвращает текущую проекцию, monotonic version, timestamps и безопасные reason codes. Raw provider payload и внутренние security details доступны только audit role.
 
+### `POST /v1/simulate-transaction` (read-only Stage 3 foundation)
+
+Принимает сериализованную транзакцию в base64 (ограничение 4 KiB), проверяет её Agave `TransactionView` parser'ом для legacy/v0/v1, собирает статические account keys, program IDs, account references и instruction data. v0 с lookup tables отклоняется до ALT resolution; v1 без `computeUnitLimit` и `loadedAccountsDataSizeLimit` отклоняется. Валидный разобранный payload передаётся на фиксированный `SOLANA_RPC_URL` через `simulateTransaction` с `sigVerify=false`, `replaceRecentBlockhash=true`, commitment `confirmed` и таймаутом 10 секунд. Ответ ограничивает размер тела RPC и число/длину log lines. `simulationPassed` означает только ответ RPC без transaction error; `executionAllowed` всегда `false`. Structural decoding не заменяет program-specific semantic decoding, allowlist, policy approval или execution permit.
+
 ### Error model
 
-Ошибки имеют стабильные codes: `invalid_intent`, `duplicate_conflict`, `quote_unavailable`, `policy_denied`, `simulation_failed`, `expired`, `provider_degraded`, `reconciliation_required`. HTTP 5xx не сообщает клиенту, что сделка не состоялась; клиент обязан получить status по idempotency key.
+Ошибки имеют стабильные codes: `invalid_intent`, `duplicate_conflict`, `quote_unavailable`, `policy_denied`, `simulation_failed`, `transaction_decode_failed`, `address_lookup_tables_unresolved`, `v1_resource_limits_missing`, `expired`, `provider_degraded`, `reconciliation_required`. HTTP 5xx не сообщает клиенту, что сделка не состоялась; клиент обязан получить status по idempotency key.
 
 ## 15. Security и threat model
 
@@ -560,10 +573,10 @@ Finalized увеличивает terminal latency, но исключает бо�
 
 ## 23. Измеримые acceptance criteria
 
-### Stage 1 Foundation — текущий этап
+### Stage 1 Foundation — реализован локальный baseline
 
 - отдельный Git repository; `git status` Sentinel остаётся чистым;
-- Rust workspace и TypeScript workspace собираются без warnings/errors;
+- Rust workspace и TypeScript workspace собираются без source warnings/errors;
 - unit/API tests проходят; lint/typecheck/format зелёные;
 - Docker Compose config валиден; PostgreSQL и Redis достигают healthy ≤ 60 секунд;
 - миграция создаёт schema в пустой БД без ошибки;
@@ -574,6 +587,8 @@ Finalized увеличивает terminal latency, но исключает бо�
 
 ### Stage 2 Read-only market/quote foundation
 
+- локально подтверждены finalized RPC facts/checkpoint и quote-only контракт на stub provider;
+- Yellowstone Linux compile/contract tests и реальный provider soak ещё не завершены;
 - 24 часа непрерывного devnet/mainnet read-only ingestion без необъяснённого gap;
 - reconnect с искусственным partial bank даёт идентичный projection hash;
 - RPC backfill 100k slots сходится с live ledger, 0 пропущенных execution-related facts;
@@ -649,6 +664,9 @@ Safe resume всегда требует: устранённую причину, 
 
 - [Solana RPC overview and commitments](https://solana.com/docs/rpc) — commitment semantics и предупреждение о public endpoints.
 - [Solana HTTP RPC methods](https://solana.com/docs/rpc/http) — block, signature, simulation и blockhash methods.
+- [Solana `simulateTransaction`](https://solana.com/docs/rpc/http/simulatetransaction) — base64 payload, `sigVerify` и `replaceRecentBlockhash` semantics.
+- [Solana versioned transactions](https://solana.com/docs/core/transactions/versioned-transactions) — актуальные форматы и лимиты сериализованной транзакции.
+- [Agave TransactionView 10.1.0](https://docs.rs/agave-transaction-view/10.1.0/agave_transaction_view/transaction_view/struct.TransactionView.html) — version-aware parsing, sanitization, keys и instruction iterators.
 - [Solana `blockSubscribe`](https://solana.com/docs/rpc/websocket/blocksubscribe) — subscription semantics и unstable status.
 - [Yellowstone gRPC repository](https://github.com/rpcpool/yellowstone-grpc) — Geyser stream implementation и clients.
 - [Yellowstone changelog](https://github.com/rpcpool/yellowstone-grpc/blob/master/CHANGELOG.md) — reconnect replay, partial banks и version changes.
