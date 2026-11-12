@@ -25,6 +25,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
+mod transaction_inspection;
+use transaction_inspection::{InspectionError, TransactionInspection, inspect_transaction};
 
 const MAX_TRANSACTION_BYTES: usize = 4_096;
 const MAX_RPC_RESPONSE_BYTES: usize = 1_048_576;
@@ -69,6 +71,7 @@ struct TransactionSimulationRequest {
 struct TransactionSimulationResponse {
     simulation_passed: bool,
     execution_allowed: bool,
+    inspection: TransactionInspection,
     context_slot: Option<u64>,
     error: Option<Value>,
     units_consumed: Option<u64>,
@@ -89,7 +92,11 @@ impl RpcSimulator {
         })
     }
 
-    async fn simulate(&self, transaction: &[u8]) -> Option<TransactionSimulationResponse> {
+    async fn simulate(
+        &self,
+        transaction: &[u8],
+        inspection: TransactionInspection,
+    ) -> Option<TransactionSimulationResponse> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let request = build_simulation_request(id, transaction);
 
@@ -147,6 +154,7 @@ impl RpcSimulator {
         Some(TransactionSimulationResponse {
             simulation_passed: error.is_none(),
             execution_allowed: false,
+            inspection,
             context_slot: result
                 .get("context")
                 .and_then(|context| context.get("slot"))
@@ -274,7 +282,28 @@ async fn simulate_transaction(
             Json(json!({ "error": "invalid_transaction_encoding" })),
         );
     };
-    if let Some(response) = state.simulator.simulate(&transaction).await {
+    let inspection = match inspect_transaction(&transaction) {
+        Ok(inspection) => inspection,
+        Err(InspectionError::InvalidTransaction) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "transaction_decode_failed" })),
+            );
+        }
+        Err(InspectionError::AddressLookupTablesUnresolved) => {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({ "error": "address_lookup_tables_unresolved" })),
+            );
+        }
+        Err(InspectionError::V1ResourceLimitsMissing) => {
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(json!({ "error": "v1_resource_limits_missing" })),
+            );
+        }
+    };
+    if let Some(response) = state.simulator.simulate(&transaction, inspection).await {
         (StatusCode::OK, Json(json!(response)))
     } else {
         tracing::warn!("read-only transaction simulation failed or RPC response was invalid");
@@ -287,6 +316,7 @@ async fn simulate_transaction(
 
 #[cfg(test)]
 mod tests {
+    use super::transaction_inspection::TransactionInspection;
     use super::{
         MAX_TRANSACTION_BYTES, RpcSimulator, build_simulation_request, decode_transaction,
         ensure_foundation_mode,
@@ -361,8 +391,15 @@ mod tests {
 
         let simulator =
             RpcSimulator::new(format!("http://{address}/")).expect("valid mock RPC URL");
+        let inspection = TransactionInspection {
+            format: "legacy",
+            static_account_keys: Vec::new(),
+            instructions: Vec::new(),
+            address_lookup_table_count: 0,
+            v1_resource_limits: None,
+        };
         let response = simulator
-            .simulate(&[1, 2, 3])
+            .simulate(&[1, 2, 3], inspection)
             .await
             .expect("simulation response");
         server.abort();
