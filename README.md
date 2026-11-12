@@ -14,10 +14,11 @@
 - durable idempotency для intents, audit/outbox записи и SQL migrations;
 - Jupiter Swap API v2 quote-only через `/order`, с проверкой пары/суммы, SHA-256 исходного ответа и сохранением результата; провайдер сейчас ограничен `mainnet-beta`;
 - finalized RPC backfill с durable checkpoint и canonical slot facts; Yellowstone confirmed stream с replay включается переменной `YELLOWSTONE_ENDPOINT` на Linux;
+- RPC-backed read-only транзакционная симуляция с ограничением размера, таймаутом и ограниченным ответом; она всегда возвращает `executionAllowed: false`;
 - health, readiness, базовые metrics, структурные логи, GitHub Actions и тесты;
 - production SDD с угрозами, trade-offs, измеримыми критериями, этапами и рисками.
 
-**Проект ещё не готов к production.** Нет реальной симуляции транзакций с проверкой инструкций и ALT, полноценного policy rollout, signer, broadcaster, confirmer, production runbooks, SLO measurements и независимого security audit.
+**Проект ещё не готов к production.** Текущая симуляция пересылает сериализованную транзакцию в `simulateTransaction`, но не декодирует и не проверяет instructions/program IDs/ALT и не создаёт approval evidence. Не завершены полноценный policy rollout, signer, broadcaster, confirmer, production runbooks, SLO measurements и независимый security audit.
 
 ## Защита активов
 
@@ -25,6 +26,7 @@
 - в коде нет приватных ключей, signer adapter, Jupiter `/execute`, `sendTransaction` или другого broadcast пути;
 - quote endpoint только читает котировку и сохраняет её доказательство;
 - Rust endpoint `/v1/simulate` сейчас выполняет fail-closed policy check, но не заявляет об on-chain simulation;
+- Rust endpoint `/v1/simulate-transaction` вызывает только RPC `simulateTransaction` с `sigVerify=false` и `replaceRecentBlockhash=true`; ответ не разрешает исполнение;
 - Stage 4 devnet execution и Stage 5 mainnet canary не включены.
 
 ## Требования
@@ -70,7 +72,8 @@ cargo run -p market-data
 - `POST /v1/intents` — принять durable idempotent intent; повтор того же ключа возвращает исходную запись, другое содержимое с тем же ключом даёт `409`;
 - `POST /v1/quotes` — запросить и сохранить Jupiter quote-only для `mainnet-beta`;
 - `GET /v1/quotes/{id}` — прочитать нормализованную котировку;
-- `POST /v1/simulate` в Rust-сервисе — fail-closed policy check без создания транзакции.
+- `POST /v1/simulate` в Rust-сервисе — fail-closed policy check без создания транзакции;
+- `POST /v1/simulate-transaction` в Rust-сервисе — read-only RPC simulation для base64-транзакции (до 4 KiB); это наблюдение, не approval и не путь отправки.
 
 По умолчанию `JUPITER_API_KEY` пустой. Если Jupiter требует ключ для выбранного тарифа, укажите его в `.env`.
 
