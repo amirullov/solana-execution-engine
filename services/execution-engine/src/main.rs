@@ -34,6 +34,7 @@ struct SimulationResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
     init_tracing();
     let execution_mode = env::var("EXECUTION_MODE").unwrap_or_else(|_| "disabled".to_owned());
     ensure_foundation_mode(&execution_mode)?;

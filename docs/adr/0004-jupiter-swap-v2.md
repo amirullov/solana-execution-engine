@@ -1,6 +1,6 @@
 # ADR-0004: Jupiter Swap API v2 как первый quote adapter
 
-- Статус: принят (read-only в Foundation)
+- Статус: принят (quote-only адаптер Stage 2)
 - Дата: 2026-11-11
 
 ## Контекст

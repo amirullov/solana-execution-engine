@@ -17,9 +17,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:up": "docker compose up -d postgres redis",
+    "db:migrate": "pnpm --filter @execution/control-api migrate",
     "db:down": "docker compose down",
     "compose:check": "docker compose config --quiet",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build && cargo fmt --all --check && cargo clippy --workspace --all-targets --all-features -- -D warnings && cargo test --workspace"
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build && cargo fmt --all --check && cargo clippy --locked --workspace --all-targets --all-features -- -D warnings && cargo test --locked --workspace"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

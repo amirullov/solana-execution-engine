@@ -2,12 +2,21 @@
 
 | Поле                | Значение                                                |
 | ------------------- | ------------------------------------------------------- |
-| Версия              | 1.0                                                     |
-| Дата                | 11 ноября 2026                                          |
-| Статус              | Approved for Stage 1 Foundation                         |
+| Версия              | 1.1                                                     |
+| Дата                | 12 ноября 2026                                          |
+| Статус              | Stage 1 Foundation implemented; Stage 2 in progress     |
 | Владелец            | Portfolio Web3                                          |
 | Репозиторий         | `solana-execution-engine` (отдельно от Solana Sentinel) |
-| Денежное исполнение | Запрещено на Stage 1                                    |
+| Денежное исполнение | Запрещено в текущей реализации                          |
+
+### Статус реализации на 12 ноября 2026
+
+- **Stage 1 Foundation:** monorepo, контракты, fail-closed сервисы, PostgreSQL/Redis, migrations, CI и локальные проверки реализованы; проверены миграция и durable idempotency на PostgreSQL.
+- **Stage 2 Read-only:** начаты quote-only интеграция Jupiter и finalized RPC ingestion с checkpoint; Yellowstone replay обработчик написан, но требует проверки в Linux CI и длительного soak.
+- **Stage 3+:** instruction decoding, транзакционная симуляция, полноценный policy rollout, signer, broadcaster и confirmer не реализованы.
+- **Real-money execution:** выключено и не начиналось. Нет ключей и пути подписи/отправки.
+
+Измеримые критерии ниже остаются gates для продвижения; они не считаются выполненными по факту наличия кода.
 
 ## 1. Резюме решения
 
@@ -560,10 +569,10 @@ Finalized увеличивает terminal latency, но исключает бо�
 
 ## 23. Измеримые acceptance criteria
 
-### Stage 1 Foundation — текущий этап
+### Stage 1 Foundation — реализован локальный baseline
 
 - отдельный Git repository; `git status` Sentinel остаётся чистым;
-- Rust workspace и TypeScript workspace собираются без warnings/errors;
+- Rust workspace и TypeScript workspace собираются без source warnings/errors;
 - unit/API tests проходят; lint/typecheck/format зелёные;
 - Docker Compose config валиден; PostgreSQL и Redis достигают healthy ≤ 60 секунд;
 - миграция создаёт schema в пустой БД без ошибки;
@@ -574,6 +583,8 @@ Finalized увеличивает terminal latency, но исключает бо�
 
 ### Stage 2 Read-only market/quote foundation
 
+- локально подтверждены finalized RPC facts/checkpoint и quote-only контракт на stub provider;
+- Yellowstone Linux compile/contract tests и реальный provider soak ещё не завершены;
 - 24 часа непрерывного devnet/mainnet read-only ingestion без необъяснённого gap;
 - reconnect с искусственным partial bank даёт идентичный projection hash;
 - RPC backfill 100k slots сходится с live ledger, 0 пропущенных execution-related facts;

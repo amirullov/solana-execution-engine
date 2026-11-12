@@ -1,8 +1,13 @@
 import { buildApp } from './app.js';
-import { loadConfig } from './config.js';
+import { loadConfig, loadProjectEnv } from './config.js';
+import { PostgresExecutionStore } from './store.js';
 
+loadProjectEnv();
 const config = loadConfig();
-const app = buildApp(config);
+if (!config.DATABASE_URL) throw new Error('DATABASE_URL is required outside injected tests');
+const store = new PostgresExecutionStore(config.DATABASE_URL);
+await store.migrate();
+const app = buildApp(config, { store });
 
 const close = async (signal: string): Promise<void> => {
   app.log.info({ signal }, 'shutting down');
